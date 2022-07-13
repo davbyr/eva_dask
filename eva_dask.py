@@ -128,7 +128,7 @@ class return_values():
     def _return_levels_from_fit_chunk(cls, chunk, distribution,
                                       return_periods):
         '''
-        Runs estimate_return_levels over an individual chunk.
+        Runs return_levels_from_fit_point over an individual chunk.
         '''
         # Get input size, flatten and declare output arrays
         n_p, n_r, n_c = chunk.shape
@@ -137,7 +137,8 @@ class return_values():
         n_rp = len(return_periods)
         out_array = np.zeros((n_rp, n_pts))*np.nan
 
-        # Loop over each point in the chunk and call cls.estimate_return_level
+        # Loop over each point in the chunk and call 
+        # cls.return_levels_from_fit_point
         for pt in range(n_pts):
             params = chunkF[:, pt]
             if len(params)>2:
@@ -181,7 +182,7 @@ class return_values():
             The first index contains parameters (shape, loc, scale) and the
             pvalue from a KS test.
         '''
-        return_levels = da.map_blocks(estimate_return_levels_chunk,
+        return_levels = da.map_blocks(cls._return_periods_from_fit_chunk,
                                       fitted_params, distribution, 
                                       return_periods)
         return return_levels
@@ -238,3 +239,12 @@ class return_values():
         return_periods[return_periods>omit_above] = np.nan
                                  
         return return_periods
+    
+
+class extremes():
+    
+    @classmethod
+    def annual_maxima(dataset, time_dim = 'time'):
+        grouped = dataset.groupby('time.year')
+        grouped_max = grouped.max(dim='time', skipna=True).chunk({'year':-1})
+        return grouped_max
