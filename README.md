@@ -1,9 +1,5 @@
-# netcdf_eva
-Scripts and routines for doing parallel extreme value analysis using Dask and pyextremes
+This is a small library to help with extreme value analysis of geospatial datasets.
+Chunking and parallelisation is done with the Dask library.
+Extreme value analysis and fitting is done using scipy.stats.
 
-Workflow for Annual BM maxima:
-
-1. netcdf_to_zarr.py 
-2. get_annual_maxima.py
-3. fit_gev_to_extremes.py
-4. return_levels
+See the nb_* files for examples of how to use the routines in eva_dask.py
