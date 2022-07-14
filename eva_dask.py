@@ -17,7 +17,7 @@ class model_fitting():
     
     @classmethod
     def fit_gev_model(cls, dask_array, distribution='genextreme', 
-                 zscore_to_remove=np.inf, minimum_points = 100, **kwargs):
+                 zscore_to_remove=np.inf, minimum_points = 100, method='MLE'):
         '''
         For fitting extreme value distributions to a map of extreme samples
         using Dask. For this to work properly, please ensure you have started 
@@ -47,7 +47,7 @@ class model_fitting():
         if distribution == 'genextreme':
             mapped = da.map_blocks(cls._fit_gev_model_chunk, dask_array, 
                                    zscore_to_remove,
-                                   minimum_points)
+                                   minimum_points, method)
         else:
             raise ValueError("Only option for get_fit() distribution is" \
                              "currently genextreme")
@@ -56,7 +56,7 @@ class model_fitting():
     
     @classmethod
     def _fit_gev_model_chunk(cls, chunk, zscore_to_remove, minimum_points,
-                             **kwargs):
+                             method):
         '''
         Fit gev to an individual chunk of a dask array.
         '''
@@ -81,13 +81,18 @@ class model_fitting():
                 z = np.abs( stats.zscore(timeseries, nan_policy='omit') )
                 timeseries = timeseries[z<=zscore_to_remove]
 
-                # Get the fitted MLE params
-                ff = gev.fit(timeseries)
-                params[:3, pt] = ff
+                # Get the fitted params. HAve to do in try-except statement as 
+                # sometimes an error is returned for infinite moments.
+                try:
+                    ff = gev.fit(timeseries, method=method)
+                    params[:3, pt] = ff
+                    # Kolmogorov-Smirnov test for fitted distribution
+                    ks = stats.kstest(timeseries, 'genextreme', args=ff)
+                    params[3, pt] = ks[1]
+                except:
+                    pass
 
-                # Kolmogorov-Smirnov test for fitted distribution
-                ks = stats.kstest(timeseries, 'genextreme', args=ff, **kwargs)
-                params[3, pt] = ks[1]
+                
 
         return params.reshape((4, n_r, n_c))
 
@@ -143,8 +148,9 @@ class return_values():
         for pt in range(n_pts):
             params = chunkF[:, pt]
             if len(params)>2:
-                rl = cls._return_levels_distribution_point(params, distribution, 
-                                                       return_periods)
+                rl = cls._return_levels_distribution_point(params,
+                                                           distribution,
+                                                           return_periods)
                 out_array[ :, pt] = rl
 
         return out_array.reshape((n_rp, n_r, n_c))
@@ -192,9 +198,9 @@ class return_values():
     def _return_periods_distribution_chunk(cls, chunk, distribution, 
                                        return_levels):
         '''
-        Runs _return_periods_distribution_point over every point in a chunk array 
-        (dask or numpy). Also requires a scipy.stats distribution class and 
-        list of return levels
+        Runs _return_periods_distribution_point over every point in a chunk
+        array  (dask or numpy). Also requires a scipy.stats distribution class
+        and list of return levels
         '''
         
         # Get shape of input chunk, flatten and initialise output arrays
@@ -208,8 +214,9 @@ class return_values():
         for pt in range(n_pts):
             params = chunkF[:, pt]
             if len(params)>2:
-                rp = cls._return_periods_distribution_point(params, distribution, 
-                                                        return_levels)
+                rp = cls._return_periods_distribution_point(params,
+                                                            distribution, 
+                                                            return_levels)
                 out_array[:, pt] = rp
 
         return out_array.reshape((n_rp, n_r, n_c))
@@ -233,22 +240,27 @@ class return_values():
                                             params[1], params[2])
         
         # Take the reciprical to transform probabilities into periods
-        return_periods[return_periods==0] = np.nan
+        return_periods[np.isclose(return_periods,0)] = np.nan
         return_periods = 1/return_periods
         
         # Mask out any periods that are above omit_above
         return_periods[return_periods>omit_above] = np.nan
                                  
         return return_periods
-    
-    @classmethod
-    def return_periods_poisson(cls, data_array, return_levels):
-        pass
         
     @classmethod
-    def _return_period_poisson_chunk(cls, chunk, return_levels):
-        for rl in return_levels:
-            np.count( chunk >= rl, axis=0 )
+    def return_periods_poisson(cls, array, return_levels):
+        
+        n_rl = len(return_levels)
+        return_periods = da.zeros((n_rl, array.shape[1], array.shape[2]))
+        
+        for rl in range(n_rl):
+            rl_total = da.count_nonzero( ~np.isnan(array) , axis =0 )
+            rl_count = da.count_nonzero( array >= return_levels[rl], axis=0 )
+            rl_count[da.isclose(rl_count, 0)]
+            return_periods[rl] = rl_total / rl_count
+            
+        return return_periods
     
 
 class extremes():
