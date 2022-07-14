@@ -17,7 +17,7 @@ class model_fitting():
     
     @classmethod
     def fit_gev_model(cls, dask_array, distribution='genextreme', 
-                 zscore_to_remove=np.inf, minimum_points = 100):
+                 zscore_to_remove=np.inf, minimum_points = 100, **kwargs):
         '''
         For fitting extreme value distributions to a map of extreme samples
         using Dask. For this to work properly, please ensure you have started 
@@ -55,7 +55,8 @@ class model_fitting():
         return mapped
     
     @classmethod
-    def _fit_gev_model_chunk(cls, chunk, zscore_to_remove, minimum_points):
+    def _fit_gev_model_chunk(cls, chunk, zscore_to_remove, minimum_points,
+                             **kwargs):
         '''
         Fit gev to an individual chunk of a dask array.
         '''
@@ -77,7 +78,7 @@ class model_fitting():
             if len(timeseries) > minimum_points:
 
                 # Remove outliers
-                z = stats.zscore(timeseries, nan_policy='omit')
+                z = np.abs( stats.zscore(timeseries, nan_policy='omit') )
                 timeseries = timeseries[z<=zscore_to_remove]
 
                 # Get the fitted MLE params
@@ -85,7 +86,7 @@ class model_fitting():
                 params[:3, pt] = ff
 
                 # Kolmogorov-Smirnov test for fitted distribution
-                ks = stats.kstest(timeseries, 'genextreme', args=ff)
+                ks = stats.kstest(timeseries, 'genextreme', args=ff, **kwargs)
                 params[3, pt] = ks[1]
 
         return params.reshape((4, n_r, n_c))
@@ -102,7 +103,7 @@ class return_values():
         return
     
     @classmethod
-    def return_levels_from_fit(cls, fitted_params, 
+    def return_levels_distribution(cls, fitted_params, 
                                distribution, 
                                return_periods):
         '''
@@ -119,16 +120,16 @@ class return_values():
             The first index contains parameters (shape, loc, scale) and the
             pvalue from a KS test.
         '''
-        return_levels = da.map_blocks(cls._return_levels_from_fit_chunk, 
+        return_levels = da.map_blocks(cls._return_levels_distribution_chunk, 
                                       fitted_params, distribution,
                                       return_periods)
         return return_levels
 
     @classmethod
-    def _return_levels_from_fit_chunk(cls, chunk, distribution,
+    def _return_levels_distribution_chunk(cls, chunk, distribution,
                                       return_periods):
         '''
-        Runs return_levels_from_fit_point over an individual chunk.
+        Runs return_levels_distribution_point over an individual chunk.
         '''
         # Get input size, flatten and declare output arrays
         n_p, n_r, n_c = chunk.shape
@@ -138,18 +139,18 @@ class return_values():
         out_array = np.zeros((n_rp, n_pts))*np.nan
 
         # Loop over each point in the chunk and call 
-        # cls.return_levels_from_fit_point
+        # cls.return_levels_distribution_point
         for pt in range(n_pts):
             params = chunkF[:, pt]
             if len(params)>2:
-                rl = cls._return_levels_from_fit_point(params, distribution, 
+                rl = cls._return_levels_distribution_point(params, distribution, 
                                                        return_periods)
                 out_array[ :, pt] = rl
 
         return out_array.reshape((n_rp, n_r, n_c))
     
     @classmethod
-    def _return_levels_from_fit_point(cls, fitted_params, 
+    def _return_levels_distribution_point(cls, fitted_params, 
                                       distribution, return_periods):
         '''
         Estimate return levels for a single point. Expects params as a length
@@ -166,7 +167,7 @@ class return_values():
         return return_levels
     
     @classmethod
-    def return_periods_from_fit(cls, fitted_params, 
+    def return_periods_distribution(cls, fitted_params, 
                                distribution, return_periods):
         '''
         Calculates return levels from an extreme value distribution fit.
@@ -182,16 +183,16 @@ class return_values():
             The first index contains parameters (shape, loc, scale) and the
             pvalue from a KS test.
         '''
-        return_levels = da.map_blocks(cls._return_periods_from_fit_chunk,
+        return_levels = da.map_blocks(cls._return_periods_distribution_chunk,
                                       fitted_params, distribution, 
                                       return_periods)
         return return_levels
 
     @classmethod
-    def _return_periods_from_fit_chunk(cls, chunk, distribution, 
+    def _return_periods_distribution_chunk(cls, chunk, distribution, 
                                        return_levels):
         '''
-        Runs _return_periods_from_fit_point over every point in a chunk array 
+        Runs _return_periods_distribution_point over every point in a chunk array 
         (dask or numpy). Also requires a scipy.stats distribution class and 
         list of return levels
         '''
@@ -207,14 +208,14 @@ class return_values():
         for pt in range(n_pts):
             params = chunkF[:, pt]
             if len(params)>2:
-                rp = cls._return_periods_from_fit_point(params, distribution, 
+                rp = cls._return_periods_distribution_point(params, distribution, 
                                                         return_levels)
                 out_array[:, pt] = rp
 
         return out_array.reshape((n_rp, n_r, n_c))
     
     @classmethod
-    def _return_periods_from_fit_point(cls, params, distribution, 
+    def _return_periods_distribution_point(cls, params, distribution, 
                                        return_levels, omit_above=np.inf):
         '''
         Estimate return periods for a single point. Expects params as a length 
@@ -240,11 +241,27 @@ class return_values():
                                  
         return return_periods
     
+    @classmethod
+    def return_periods_poisson(cls, data_array, return_levels):
+        pass
+        
+    @classmethod
+    def _return_period_poisson_chunk(cls, chunk, return_levels):
+        for rl in return_levels:
+            np.count( chunk >= rl, axis=0 )
+    
 
 class extremes():
-    
     @classmethod
-    def annual_maxima(dataset, time_dim = 'time'):
+    def annual_maxima(cls, dataset, time_dim = 'time', min_datapoints=300):
+        '''
+        Takes in an xarray datasets and returns a new grouped dataset of
+        annual maxima. The returned dataset needs to be computed (.compute() 
+        or .to_netcdf()).
+        '''
         grouped = dataset.groupby('time.year')
-        grouped_max = grouped.max(dim='time', skipna=True).chunk({'year':-1})
-        return grouped_max
+        grouped_count = dataset.count(dim='time')
+        grouped_max = grouped.max(dim='time', skipna=True)
+        annual_maxima = grouped_max.where(grouped_count >= min_datapoints)
+        
+        return annual_maxima.chunk({'year':-1})
