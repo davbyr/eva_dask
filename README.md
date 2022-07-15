@@ -46,7 +46,30 @@ You can fit a gev as follows:
 from eva_dask import model_fitting
 gev_parameters = model_fitting.fit_gev_model(dask_array = data, distribution = 'genextreme', zscore_to_remove = 4, 
                                              minimum_points = 100, method='MLE')
-gev_parameters = gev_parameters.compute()
+gev_parameters = gev_parameters.compute() # or put into an xarray Dataset and use to_netcdf()
 ```
 
 This will return an array of equal spatial size to the input (x, y) but with the time dimension replaced by a new parameters dimension with 4 elements. The first three elements of this dimension are the GEV (shape, loc, scale). The last element is the pvalue from a ks-test, which can be used for accepting or rejecting bad fits. This routine uses dask's `map_blocks()` routine, which will apply the analysis to each chunk specified in the input array (in parallel).
+
+### return_values class
+
+You can use `return_periods_distribution()` or `return_levels_distribution()` to estimate these values from a set of fitted distribution parameters. For example:
+
+```
+from eva_dask import return_values
+from scipy.stats import genextreme as gev
+
+# Open a file you might have saved from the model_fitting analysis
+ds_params = xr.open_dataset(fn_gev)
+params = da.from_array( ds_params['parameters'].data )
+
+# Chunk the data. Send 50x50 chunks to different processes
+params = params.rechunk([-1, 50, 50])
+
+# Estimate return levels and periods from the fitted distributions
+rl = return_values.return_levels_distribution(params, gev, return_periods = [1, 2, 50, 100])
+rp = return_values.return_periods_distribution(params, gev, return_levels = [30, 32, 35])
+
+rl = rl.compute()
+rp = rp.compute()
+```
