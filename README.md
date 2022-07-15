@@ -33,6 +33,7 @@ You should always make sure that your time dimension has only one dask chunk.
 ## extremes class
 ```
 '''
+def annual_maxima(cls, dataset, time_dim = 'time', min_datapoints=300):
         Takes in an xarray datasets and finds the annual maxima.
         
         Args:
