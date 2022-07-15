@@ -28,24 +28,13 @@ Or if you have eager data (loaded to memory), you can transform it to a dask arr
 data = da.from_array(data, chunks=[-1, 30, 30])
 ```
 
-You should always make sure that your time dimension has only one dask chunk.
+You should always make sure that your time dimension has only one dask chunk. Also be aware that all chunking/parallelisation is done automatically using dask and the chunks specified on the xarray dataset or dask array. Returned objects are often delayed and need to be computed to bring data to memory or write to disk. This can be done using `.compute()` or `to_netcdf()` if in an xarray dataset.
 
 ## extremes class
-```
-'''
-def annual_maxima(cls, dataset, time_dim = 'time', min_datapoints=300):
-        Takes in an xarray datasets and finds the annual maxima.
-        
-        Args:
-            dataset        : xarray.Dataset() object containing data variables
-                             to analyse
-            time_dim       : Name of the time dimension in the xarray dataset
-            min_datapoints : Minimum number of data points for analysis, 
-                             otherwise NaN
+You can find the annual maxima of all variables in an xarray dataset using `extremes.annual_maxima()`:
 
-        Returns:
-            returns a new grouped dataset of annual maxima. The returned 
-            dataset needs to be computed (.compute() or .to_netcdf()).
-        
-        '''
+```
+from eva_dask import extremes
+maxima = extremes.annual_maxima(xarray_dataset, time_dim = 'time', min_datapoints=300)
+maxima = maxima.to_netcdf(filename)
 ```
