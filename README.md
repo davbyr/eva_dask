@@ -73,3 +73,9 @@ rp = return_values.return_periods_distribution(params, gev, return_levels = [30,
 rl = rl.compute()
 rp = rp.compute()
 ```
+
+Alternatively, you can use `return_periods_poisson()` to calculate return periods empirically, straight from input data:
+
+```
+rp = return_values.return_periods_poisson(data, np.arange(30,35)).compute()
+```
